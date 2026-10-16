@@ -22,6 +22,8 @@ Binance WebSocket (live)┘          │
 - **REST:** 15m candles, ~6 months history
 - **WebSocket:** 1m live candles
 
+Detailed UML diagrams (data flow + data model) and design decisions: [docs/architecture.md](docs/architecture.md)
+
 ## Local setup
 
 Requirements: Docker, Python 3.10+
