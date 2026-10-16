@@ -1,53 +1,85 @@
-Project Name
-==============================
+# OPA – Crypto Data Pipeline (Binance)
 
-This project is a starting Pack for MLOps projects based on the subject "movie_recommandation". It's not perfect so feel free to make some modifications on it.
+DataScientest Data Engineering project (sep26_bde_int_opa).
 
-Project Organization
-------------
+## Architecture
 
-    ├── LICENSE
-    ├── README.md          <- The top-level README for developers using this project.
-    ├── data
-    │   ├── external       <- Data from third party sources.
-    │   ├── interim        <- Intermediate data that has been transformed.
-    │   ├── processed      <- The final, canonical data sets for modeling.
-    │   └── raw            <- The original, immutable data dump.
-    │
-    ├── logs               <- Logs from training and predicting
-    │
-    ├── models             <- Trained and serialized models, model predictions, or model summaries
-    │
-    ├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-    │                         the creator's initials, and a short `-` delimited description, e.g.
-    │                         `1.0-jqp-initial-data-exploration`.
-    │
-    ├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-    │
-    ├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-    │   └── figures        <- Generated graphics and figures to be used in reporting
-    │
-    ├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-    │                         generated with `pip freeze > requirements.txt`
-    │
-    ├── src                <- Source code for use in this project.
-    │   ├── __init__.py    <- Makes src a Python module
-    │   │
-    │   ├── data           <- Scripts to download or generate data
-    │   │   └── make_dataset.py
-    │   │
-    │   ├── features       <- Scripts to turn raw data into features for modeling
-    │   │   └── build_features.py
-    │   │
-    │   ├── models         <- Scripts to train models and then use trained models to make
-    │   │   │                 predictions
-    │   │   ├── predict_model.py
-    │   │   └── train_model.py
-    │   │
-    │   ├── visualization  <- Scripts to create exploratory and results oriented visualizations
-    │   │   └── visualize.py
-    │   └── config         <- Describe the parameters used in train_model.py and predict_model.py
+```
+Binance REST (history) ─┐
+                        ├─> MongoDB: raw_klines   (BRONZE, raw data as received)
+Binance WebSocket (live)┘          │
+                                   ▼  transform.py
+                         PostgreSQL: fact_kline    (SILVER, clean candles)
+                                   │
+                                   ▼
+                         PostgreSQL: gold_features, predictions (GOLD)
+                                   │
+                                   ▼
+                         FastAPI ──> Streamlit
+```
 
---------
+- **Assets:** BTCUSDT, SOLUSDT
+- **REST:** 15m candles, ~6 months history
+- **WebSocket:** 1m live candles
 
-<p><small>Project based on the <a target="_blank" href="https://drivendata.github.io/cookiecutter-data-science/">cookiecutter data science project template</a>. #cookiecutterdatascience</small></p>
+## Local setup
+
+Requirements: Docker, Python 3.10+
+
+```bash
+git clone https://github.com/DataScientest-Studio/sep26_bde_int_opa.git
+cd sep26_bde_int_opa
+cp .env.example .env
+docker compose up -d                 # starts Postgres + Mongo
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python src/data/db.py                # checks that both databases are reachable
+```
+
+Each of us runs the databases locally. Data is never committed to git.
+
+## Mongo document format (bronze contract)
+
+Collection: `raw_klines`. Every extractor writes documents in this format:
+
+| Field | Type | Example |
+|---|---|---|
+| `symbol` | string | `"BTCUSDT"` |
+| `interval` | string | `"15m"` |
+| `source` | string | `"rest"` or `"websocket"` |
+| `ingested_at` | datetime (UTC) | `2026-10-16T13:00:00Z` |
+| `payload` | array / object | raw kline as received (array from REST, object from WebSocket) |
+
+Do not change this format without telling the team first.
+
+## Repo structure
+
+Based on the DataScientest template (cookiecutter data science).
+
+```
+├── docker-compose.yml        # Postgres + Mongo
+├── .env.example              # copy to .env
+├── requirements.txt
+├── sql/init.sql              # Postgres schema (silver + gold)
+├── src/
+│   ├── data/
+│   │   ├── db.py             # shared DB connections
+│   │   ├── extract_rest.py   # bronze: history  (Dennis)
+│   │   ├── extract_ws.py     # bronze: live     (Dennis)
+│   │   └── transform.py      # silver: Mongo -> Postgres (Talgat)
+│   ├── features/             # gold: feature engineering (Stage 2)
+│   ├── models/               # train / predict (Stage 2)
+│   └── visualization/
+├── notebooks/
+├── tests/
+├── docs/                     # UML, report
+└── reports/figures/
+```
+
+## Git workflow
+
+- `master` always works; no direct pushes
+- one branch per task: `feature/extract-rest`, `feature/postgres-schema`, ...
+- small commits, clear messages
+- pull request -> review by the other -> merge
+- before a new task: `git checkout master && git pull`

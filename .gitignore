@@ -87,3 +87,9 @@ target/
 
 # Mypy cache
 .mypy_cache/
+
+# Local virtualenv and model artifacts
+.venv/
+venv/
+*.pkl
+*.joblib

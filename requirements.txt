@@ -1,1 +1,6 @@
-
+requests
+websocket-client
+pymongo
+psycopg2-binary
+python-dotenv
+pandas
