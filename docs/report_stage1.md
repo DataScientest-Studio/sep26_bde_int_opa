@@ -5,8 +5,6 @@
 **Mentor:** Nicolas Fradin
 **Stage deadline:** 19 October 2026
 
-> Sections marked **TODO** still need input: real numbers and examples come from the first full run of the extractors.
-
 ---
 
 ## 1. Introduction
@@ -31,7 +29,7 @@
 | Member | Background | Main responsibilities in Stage 1 |
 |---|---|---|
 | Talgat Melisbekov | Data Engineer / BI Specialist (Python, SQL, data warehousing, BI), M.Sc. Informatics; active crypto investor | Repo setup, Docker environment, PostgreSQL schema, Mongo → Postgres transformation, UML diagrams |
-| Dennis Secic | **TODO (Dennis):** short background | Binance REST and WebSocket extraction into MongoDB, API part of this report |
+| Dennis Secic | IT Systems, about 6 years in IT (network + systems administration) | Binance REST and WebSocket extraction into MongoDB, API part of this report |
 
 ### 1.4 Similar projects
 
@@ -47,14 +45,35 @@ Our approach combines both ideas and adds an explicit **bronze / silver / gold**
 
 ### 2.1 Binance REST API (historical data)
 
-**TODO (Dennis):**
-- Endpoint: `GET https://api.binance.com/api/v3/klines`
-- Parameters used: `symbol`, `interval=15m`, `startTime`, `endTime`, `limit=1000`
-- Limits: max 1000 candles per request, request weight / rate limits
-- Pagination strategy: next `startTime` = close time of the last candle (it ends in .999 ms, so the next request starts exactly at the next candle)
-- Real example of one kline (copy from Mongo after the first run)
-
-Each REST kline is an array with a fixed field order:
+- Endpoint: GET https://api.binance.com/api/v3/klines, public market data, no API key needed.
+- Parameters used: symbol (BTCUSDT, SOLUSDT), interval=15m, startTime, endTime, limit=1000.
+- Limits: at most 1,000 candles per request (default 500). Each request costs 2 units of request weight; limits are counted per IP address, and the current usage comes back in the X-MBX-USED-WEIGHT-1M response header. HTTP 429 means "slow down" (Retry-After says for how long); ignoring it leads to HTTP 418, an IP ban from 2 minutes up to 3 days.
+- Pagination: 180 days of 15-minute candles are about 17,280 per symbol, fetched in 18 requests. Each request starts at the open time of the last candle received plus 15 minutes (its close time + 1 ms) and ends at the last finished candle, so a candle that is still running is never stored.
+- Reruns: the extractor first looks up the newest candle already in MongoDB and only requests newer ones, so running it again creates no duplicates. This makes it ready for scheduled runs in Stage 3.
+- Error handling: network errors are retried up to 5 times; on HTTP 429 or 418 the extractor waits as long as Binance asks; HTTP 451 (location blocked) stops with a clear message.
+- Storage: one document per kline in raw_klines (source = "rest"), with the kline array unchanged as payload.
+- Real example of one stored document (docs/samples/bronze_rest_example.json):
+{
+  "symbol": "BTCUSDT",
+  "interval": "15m",
+  "source": "rest",
+  "ingested_at": "2026-10-18T21:32:53.795000+00:00",
+  "payload": [
+    1776807900000,
+    "75452.80000000",
+    "75585.88000000",
+    "75431.62000000",
+    "75549.99000000",
+    "66.97828000",
+    1776808799999,
+    "5057941.93808810",
+    11563,
+    "46.33728000",
+    "3499574.60746230",
+    "0"
+  ]
+}
+- Each REST kline is an array with a fixed field order:
 
 | Index | Field | Example type |
 |---|---|---|
@@ -69,11 +88,47 @@ Each REST kline is an array with a fixed field order:
 
 ### 2.2 Binance WebSocket API (live data)
 
-**TODO (Dennis):**
-- Stream: `wss://stream.binance.com:9443/stream?streams=btcusdt@kline_1m/solusdt@kline_1m`
-- Message structure (`{"stream": ..., "data": {..., "k": {...}}}`), meaning of `k.x` (candle closed)
-- How reconnects are handled
-- Real example of one message (copy from Mongo after the first run)
+- Stream: wss://stream.binance.com:9443/stream?streams=btcusdt@kline_1m/solusdt@kline_1m: one connection carrying a combined stream for both symbols, no API key needed.
+- Message structure: {"stream": "btcusdt@kline_1m", "data": {"e": "kline", "E": <event time>, "s": "BTCUSDT", "k": {...}}}. The candle is in data.k, with one-letter keys: t/T open and close time, o/h/l/c prices, v volume, q quote volume, n number of trades, x closed or not.
+- Meaning of k.x: Binance pushes the running candle about every 2 seconds with x = false; the last update of each minute has x = true. The extractor stores only those: one document per finished candle, 2 × 1,440 = 2,880 per day instead of about 86,400 messages.
+- Storage: the whole message, unchanged, as payload (source = "websocket").
+- Connection limits: a connection lasts at most 24 hours. Binance sends a ping every 20 seconds and disconnects if no pong comes back within a minute; the websocket-client library answers automatically.
+- Reconnects: the extractor runs in a loop. When Binance closes the connection, the network drops, or no message arrives for 60 seconds, it waits 5 seconds and connects again. Candles missed during a reconnect can be filled later from the REST API.
+- Open question for Stage 2: the live stream uses 1m candles while the history uses 15m. A model trained on 15m candles needs 15m live input, so we will either subscribe to kline_15m as well or resample 1m candles to 15m in the silver/gold layer.
+- Real example of one stored document (docs/samples/bronze_ws_example.json):
+{
+  "symbol": "BTCUSDT",
+  "interval": "1m",
+  "source": "websocket",
+  "ingested_at": "2026-10-18T21:34:00.085000+00:00",
+  "payload": {
+    "stream": "btcusdt@kline_1m",
+    "data": {
+      "e": "kline",
+      "E": 1792359240033,
+      "s": "BTCUSDT",
+      "k": {
+        "t": 1792359180000,
+        "T": 1792359239999,
+        "s": "BTCUSDT",
+        "i": "1m",
+        "f": 6772782447,
+        "L": 6772783976,
+        "o": "81028.71000000",
+        "c": "81037.65000000",
+        "h": "81054.39000000",
+        "l": "81028.71000000",
+        "v": "11.32457000",
+        "n": 1530,
+        "x": true,
+        "q": "917748.77759240",
+        "V": "4.90128000",
+        "Q": "397165.50504170",
+        "B": "0"
+      }
+    }
+  }
+}
 
 ### 2.3 Availability and ownership
 
@@ -81,10 +136,10 @@ The data is publicly available through Binance's market data endpoints; no API k
 
 ### 2.4 Volume
 
-| Data set | Interval | Period | Expected candles per symbol | Actual (TODO after first run) |
+| Data set | Interval | Period | Expected candles per symbol | Actual (18 Oct 2026) |
 |---|---|---|---|---|
-| REST history | 15m | ~180 days | 180 × 96 ≈ 17,280 | TODO |
-| WebSocket live | 1m | continuous | 1,440 per day | TODO |
+| REST history | 15m | ~180 days | 180 × 96 ≈ 17,280 | BTCUSDT: 17,279, SOLUSDT: 17,279 |
+| WebSocket live | 1m | continuous | 1,440 per day | BTCUSDT: 2, SOLUSDT: 2 (test sample of 2 minutes) |
 
 With two symbols, the historical load is about 35,000 candles: small in size, but enough to design and test a pipeline that would scale to more symbols and longer periods.
 
