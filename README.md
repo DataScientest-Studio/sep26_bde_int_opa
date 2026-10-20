@@ -60,23 +60,42 @@ Based on the DataScientest template (cookiecutter data science).
 
 ```
 ├── docker-compose.yml        # Postgres + Mongo
-├── .env.example              # copy to .env
+├── .env.example              # copy to .env (never commit .env)
 ├── requirements.txt
-├── sql/init.sql              # Postgres schema (silver + gold)
+├── sql/
+│   ├── init.sql              # Postgres schema (silver + gold)
+│   └── queries/              # reusable SQL used by the API, features and report
 ├── src/
 │   ├── data/
 │   │   ├── db.py             # shared DB connections
-│   │   ├── extract_rest.py   # bronze: history  (Dennis)
-│   │   ├── extract_ws.py     # bronze: live     (Dennis)
-│   │   └── transform.py      # silver: Mongo -> Postgres (Talgat)
-│   ├── features/             # gold: feature engineering (Stage 2)
-│   ├── models/               # train / predict (Stage 2)
-│   └── visualization/
+│   │   ├── extract_rest.py   # bronze: history            (Dennis)
+│   │   ├── extract_ws.py     # bronze: live               (Dennis)
+│   │   ├── check_bronze.py   # bronze checks + samples    (Dennis)
+│   │   └── transform.py      # silver: Mongo -> Postgres  (Talgat)
+│   ├── features/
+│   │   └── build_features.py # gold: fact_kline -> gold_features (Talgat, Stage 2)
+│   ├── models/               # training notebook output, predict()  (Dennis, Stage 2)
+│   ├── api/
+│   │   └── main.py           # FastAPI                    (Talgat, Stage 2)
+│   └── visualization/        # Streamlit / charts         (Stage 4)
+├── models/                   # saved model artifacts (ignored by git)
 ├── notebooks/
 ├── tests/
-├── docs/                     # UML, report
-└── reports/figures/
+├── docs/                     # UML, report, data samples
+├── reports/figures/
+└── scratch/                  # personal experiments, ignored by git (see scratch/README.md)
 ```
+
+## Working rules
+
+- **Shared code** lives in `src/`, `sql/`, `tests/`, `docs/` and goes through a pull request.
+- **Personal experiments** go to `scratch/`: the folder is in `.gitignore`, so nothing there is ever committed.
+  Need to test someone else's script with changes? Copy it to `scratch/` first, never edit their file.
+- **More personal ignores** (a local tool, a data dump outside `scratch/`): add the path to `.git/info/exclude`.
+  It works like `.gitignore` but stays on your machine and is never pushed.
+- **Secrets and data** never go to git: `.env`, model files (`*.joblib`, `*.pkl`) and databases are ignored.
+- **Contracts between our parts** are written down here or in the code: the Mongo document format (above),
+  the `gold_features` columns (`sql/init.sql`) and the `predict()` output (`src/api/main.py`).
 
 ## Git workflow
 

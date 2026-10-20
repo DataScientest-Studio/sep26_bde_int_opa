@@ -93,3 +93,11 @@ target/
 venv/
 *.pkl
 *.joblib
+
+# Personal experiments: whole folder ignored, except its README
+scratch/*
+!scratch/README.md
+
+# pgAdmin / IDE / OS leftovers
+pgadmin/
+*.log
