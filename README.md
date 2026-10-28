@@ -12,7 +12,7 @@ Binance WebSocket (live)┘          │
                          PostgreSQL: fact_kline    (SILVER, clean candles)
                                    │
                                    ▼
-                         PostgreSQL: gold_features, predictions (GOLD)
+                         PostgreSQL: gold_features, outcomes, model_registry, predictions (GOLD)
                                    │
                                    ▼
                          FastAPI ──> Streamlit
