@@ -1,0 +1,12 @@
+.git
+.venv
+.env
+data/
+scratch/
+notebooks/
+reports/
+docs/
+models/
+**/__pycache__
+*.log
+pgadmin/
