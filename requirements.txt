@@ -4,3 +4,6 @@ pymongo
 psycopg2-binary
 python-dotenv
 pandas
+fastapi
+uvicorn
+httpx

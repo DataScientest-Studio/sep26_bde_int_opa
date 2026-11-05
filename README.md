@@ -32,13 +32,38 @@ Requirements: Docker, Python 3.10+
 git clone https://github.com/DataScientest-Studio/sep26_bde_int_opa.git
 cd sep26_bde_int_opa
 cp .env.example .env
-docker compose up -d                 # starts Postgres + Mongo
+docker compose up -d --build         # starts Postgres + Mongo + API (rebuilds the API image)
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python src/data/db.py                # checks that both databases are reachable
 ```
 
 Each of us runs the databases locally. Data is never committed to git.
+
+### Pipeline (manual run until Airflow, Stage 3)
+
+```bash
+python src/data/extract_rest.py          # Binance REST  -> Mongo raw_klines   (bronze)
+python src/data/transform.py             # Mongo         -> fact_kline         (silver)
+python src/features/build_features.py    # fact_kline    -> gold_features, outcomes (gold)
+```
+
+### API
+
+Runs in Docker (`opa_api`, port 8000). For local development with auto-reload, stop the container first
+(`docker compose stop api`) or use another port: `uvicorn src.api.main:app --reload --port 8001`.
+Interactive docs: http://localhost:8000/docs
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | `{"status": "ok"}` if the process is up |
+| `GET /ready` | 200 if PostgreSQL answers, 503 otherwise |
+| `GET /symbols` | trading pairs |
+| `GET /candles?symbol=BTCUSDT&interval=15m&limit=96` | newest closed candles, oldest first (max 2000) |
+| `GET /stats` | count, period, min/max/avg price per symbol |
+| `GET /features/latest?symbol=BTCUSDT` | newest gold feature row |
+| `GET /predict/{symbol}?task=direction\|volatility` | newest prediction of the active model, or a naive baseline (`source: "baseline"`) while no model is active; `stale: true` if the model's prediction is older than the newest candle |
+| `GET /predict?symbol=BTCUSDT&task=direction` | same, symbol as query parameter |
 
 ## Mongo document format (bronze contract)
 
@@ -59,7 +84,9 @@ Do not change this format without telling the team first.
 Based on the DataScientest template (cookiecutter data science).
 
 ```
-├── docker-compose.yml        # Postgres + Mongo
+├── docker-compose.yml        # Postgres + Mongo + API
+├── docker/api.Dockerfile     # API image
+├── .dockerignore
 ├── .env.example              # copy to .env (never commit .env)
 ├── requirements.txt
 ├── sql/
