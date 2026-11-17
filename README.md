@@ -48,7 +48,14 @@ Airflow runs it automatically (see below). To run it by hand:
 python src/data/extract_rest.py          # Binance REST  -> Mongo raw_klines   (bronze)
 python src/data/transform.py             # Mongo         -> fact_kline         (silver)
 python src/features/build_features.py    # fact_kline    -> gold_features, outcomes (gold)
+python src/models/train_model.py --activate   # train, register and activate the direction models
+python src/models/predict_model.py --all      # write the newest prediction per symbol for the API
 ```
+
+The training notebook `notebooks/01_train_direction.ipynb` does the training step by step with explanations
+(`pip install jupyter`, then pick the `.venv` kernel). Model files are written to `models/direction/<symbol>/`
+and are not committed: each of us trains locally against their own database, and `model_registry` records
+which file belongs to which model. The API never loads them; it reads what `predict_model.py` wrote to `predictions`.
 
 ### Airflow (batch pipeline, Stage 3)
 
@@ -130,7 +137,9 @@ Based on the DataScientest template (cookiecutter data science).
 │   │   └── transform.py      # silver: Mongo -> Postgres  (Talgat)
 │   ├── features/
 │   │   └── build_features.py # gold: fact_kline -> gold_features (Talgat, Stage 2)
-│   ├── models/               # training notebook output, predict()  (Dennis, Stage 2)
+│   ├── models/
+│   │   ├── train_model.py    # train + register the direction model (Dennis, Stage 2)
+│   │   └── predict_model.py  # predictions -> table read by the API (Dennis, Stage 2)
 │   ├── api/
 │   │   └── main.py           # FastAPI                    (Talgat, Stage 2)
 │   ├── pipeline/
@@ -138,6 +147,7 @@ Based on the DataScientest template (cookiecutter data science).
 │   └── visualization/        # Streamlit / charts         (Stage 4)
 ├── models/                   # saved model artifacts (ignored by git)
 ├── notebooks/
+│   └── 01_train_direction.ipynb  # model training, step by step (Dennis, Stage 2)
 ├── tests/
 ├── docs/                     # UML, report, data samples
 ├── reports/figures/

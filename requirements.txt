@@ -7,3 +7,5 @@ pandas
 fastapi
 uvicorn
 httpx
+scikit-learn==1.7.2   # pinned: a saved model only loads safely with the version that trained it
+joblib
