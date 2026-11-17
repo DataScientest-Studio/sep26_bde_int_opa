@@ -40,13 +40,38 @@ python src/data/db.py                # checks that both databases are reachable
 
 Each of us runs the databases locally. Data is never committed to git.
 
-### Pipeline (manual run until Airflow, Stage 3)
+### Pipeline
+
+Airflow runs it automatically (see below). To run it by hand:
 
 ```bash
 python src/data/extract_rest.py          # Binance REST  -> Mongo raw_klines   (bronze)
 python src/data/transform.py             # Mongo         -> fact_kline         (silver)
 python src/features/build_features.py    # fact_kline    -> gold_features, outcomes (gold)
 ```
+
+### Airflow (batch pipeline, Stage 3)
+
+`docker compose up -d --build` also starts Airflow (LocalExecutor, own metadata Postgres: service `airflow-db`).
+Give Docker Desktop at least 4 GB of memory (Settings > Resources).
+UI: http://localhost:8080 (user `admin`, password `admin` - local only).
+
+DAG `opa_pipeline_15m` runs at minute 1, 16, 31 and 46 of every hour, one minute after each 15m candle closes:
+
+```
+extract_rest_bronze -> transform_silver -> build_features_gold -> check_quality
+```
+
+Each task runs one project script unchanged, so the DAG is exactly the manual pipeline above.
+`check_quality` fails the run if the newest candle is older than 45 minutes, if any candle has no
+gold feature row, or if outcomes lag behind. Failed tasks are retried twice, runs never overlap,
+and old runs are not backfilled (`extract_rest.py` fills gaps by itself).
+
+Notes:
+- The pipeline only runs while the machine is awake and Docker is running; after a pause the next run catches up.
+- Pause the DAG in the UI before running the scripts by hand, so two runs don't overlap.
+- Don't keep `extract_ws.py` running next to Airflow for now: `transform.py` reads the whole `raw_klines`
+  collection every run, and the WebSocket adds a document every ~2 s. (Planned: incremental transform.)
 
 ### API
 
@@ -84,8 +109,12 @@ Do not change this format without telling the team first.
 Based on the DataScientest template (cookiecutter data science).
 
 ```
-├── docker-compose.yml        # Postgres + Mongo + API
-├── docker/api.Dockerfile     # API image
+├── docker-compose.yml        # Postgres + Mongo + API + Airflow
+├── docker/
+│   ├── api.Dockerfile        # API image
+│   └── airflow.Dockerfile    # Airflow image (official image + our libraries)
+├── airflow/dags/
+│   └── opa_pipeline.py       # batch DAG: bronze -> silver -> gold -> quality  (Talgat, Stage 3)
 ├── .dockerignore
 ├── .env.example              # copy to .env (never commit .env)
 ├── requirements.txt
@@ -104,6 +133,8 @@ Based on the DataScientest template (cookiecutter data science).
 │   ├── models/               # training notebook output, predict()  (Dennis, Stage 2)
 │   ├── api/
 │   │   └── main.py           # FastAPI                    (Talgat, Stage 2)
+│   ├── pipeline/
+│   │   └── check_quality.py  # data quality gate, last DAG task (Talgat, Stage 3)
 │   └── visualization/        # Streamlit / charts         (Stage 4)
 ├── models/                   # saved model artifacts (ignored by git)
 ├── notebooks/
