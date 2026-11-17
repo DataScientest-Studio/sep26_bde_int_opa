@@ -20,6 +20,7 @@ x-airflow-common: &airflow-common
     - ./airflow/dags:/opt/airflow/dags
     - ./src:/opt/airflow/opa/src:ro
     - ./sql:/opt/airflow/opa/sql:ro
+    - ./models:/opt/airflow/opa/models     # trained models: written by train (and the notebooks), read by predict
     - airflow_logs:/opt/airflow/logs
   depends_on: &airflow-depends
     airflow-db:

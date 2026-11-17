@@ -66,10 +66,17 @@ UI: http://localhost:8080 (user `admin`, password `admin` - local only).
 DAG `opa_pipeline_15m` runs at minute 1, 16, 31 and 46 of every hour, one minute after each 15m candle closes:
 
 ```
-extract_rest_bronze -> transform_silver -> build_features_gold -> check_quality
+extract_rest_bronze -> transform_silver -> build_features_gold -> check_quality -> predict
 ```
 
 Each task runs one project script unchanged, so the DAG is exactly the manual pipeline above.
+`predict` writes the newest prediction of every active model into `predictions`, which the API reads; it only runs
+after `check_quality` passed. Before the first training there is no active model, and `predict` writes nothing.
+
+DAG `opa_retrain_weekly` (Sunday 03:30 UTC) retrains both models with `train_model.py --activate`, then runs `predict`.
+Trigger it once by hand after the first data load (Airflow UI: the play button), so the pipeline has models to use.
+Models trained in the notebooks on your PC work too: `./models` is mounted into the Airflow containers, and the
+Airflow image uses the same scikit-learn version as `requirements.txt` (and numpy 2), so the files load in both places.
 `check_quality` fails the run if the newest candle is older than 45 minutes, if any candle has no
 gold feature row, or if outcomes lag behind. Failed tasks are retried twice, runs never overlap,
 and old runs are not backfilled (`extract_rest.py` fills gaps by itself).
@@ -121,7 +128,8 @@ Based on the DataScientest template (cookiecutter data science).
 │   ├── api.Dockerfile        # API image
 │   └── airflow.Dockerfile    # Airflow image (official image + our libraries)
 ├── airflow/dags/
-│   └── opa_pipeline.py       # batch DAG: bronze -> silver -> gold -> quality  (Talgat, Stage 3)
+│   ├── opa_pipeline.py       # batch DAG: bronze -> silver -> gold -> quality -> predict  (Talgat, Stage 3)
+│   └── opa_retrain.py        # weekly DAG: retrain + activate the models, then predict  (Dennis, Stage 3)
 ├── .dockerignore
 ├── .env.example              # copy to .env (never commit .env)
 ├── requirements.txt

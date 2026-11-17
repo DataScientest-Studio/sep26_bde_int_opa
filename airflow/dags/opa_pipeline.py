@@ -11,10 +11,12 @@ the downstream tasks then do not run and Airflow retries it.
     transform_silver      Mongo         -> Postgres fact_kline          (src/data/transform.py)
     build_features_gold   fact_kline    -> gold_features + outcomes     (src/features/build_features.py)
     check_quality         freshness + gold coverage, fails loudly       (src/pipeline/check_quality.py)
+    predict               active models -> Postgres predictions          (src/models/predict_model.py --all)
 
 Schedule: minute 1, 16, 31, 46 - one minute after each 15m Binance candle closes.
-Next step (once the model is in the repo): a predict task after build_features_gold
-that writes into the `predictions` table, which the API already reads.
+predict runs only after the quality gate passed, so the API never serves a prediction made on
+stale or incomplete data. Before the first training there is no active model: predict then
+writes nothing and still succeeds. The models themselves are retrained by opa_retrain_weekly.
 """
 from datetime import datetime, timedelta
 
@@ -49,5 +51,6 @@ with DAG(
     transform = script("transform_silver", "src/data/transform.py")
     features = script("build_features_gold", "src/features/build_features.py")
     quality = script("check_quality", "src/pipeline/check_quality.py")
+    predict = script("predict", "src/models/predict_model.py --all")
 
-    extract >> transform >> features >> quality
+    extract >> transform >> features >> quality >> predict
